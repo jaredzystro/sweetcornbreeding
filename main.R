@@ -9,9 +9,9 @@
 # Space between operators
 # No space after function call
 
-# PART A - for all traits
+# PART A - for all traits -----
 
-# 1. Initialize
+# 1. Initialize -----
 #     Clean up
 #     Set global variables
 InitializeProject <- function() {
@@ -23,13 +23,14 @@ InitializeProject <- function() {
   MARKER_DATA_FILE <<- "./data/data_parimp_37genos_dropminorhets_dropNAs_thinto250KB.hmp.txt"
   FUNCTIONS_SUBDIRECTORY <<- "./functions"
   NUM_GENOTYPES <<- 38
+  TRAITS <<- c("PlantHt","EarHt","Flavor","Tenderness","Husk","Tip","Width","Length","Pollen")
   
   setwd(WORKING_DIRECTORY)
   
 }
 InitializeProject()
 
-# 2. Import / create data tables
+# 2. Import / create data tables -----
 #     Load in 2015 and 2016 phenotype data
 LoadPhenoData <- function() {
   
@@ -46,7 +47,7 @@ LoadMarkerData <- function() {
 }
 marker_data <- LoadMarkerData()
 
-# 3. Format data
+# 3. Format data -----
 #     Set factors in phenotype data
 AddPhenoDataFactors <- function (pheno_data) {
   
@@ -125,20 +126,20 @@ CreatePedTable <- function (parent_names) {
 }
 ped_table <- CreatePedTable(data.frame(rownames(marker_data)))
 
-#     Create marker data for hybrids from inbred marker data
+# Create marker data for hybrids from inbred marker data
 CreateHybridMarkers <- function(marker_data,ped_table) {
   
   inbred_geno <- marker_data
   hybrid_peds <- ped_table[-(1:NUM_GENOTYPES), ]
-  
   hybrid_geno <- matrix(NA, nrow = nrow(hybrid_peds), ncol = ncol(inbred_geno))
+  
+  # Average of parental alleles at each locus
   for (i in 1:nrow(hybrid_peds)) {
     hybrid_geno[i, ] <- (inbred_geno[rownames(inbred_geno) == hybrid_peds$par1[i]]+
                         inbred_geno[rownames(inbred_geno) == hybrid_peds$par2[i]])/2
   }
   
   rownames(hybrid_geno) <- hybrid_peds$indiv
-  
   colnames(inbred_geno) <- 1:ncol(inbred_geno)
   colnames(hybrid_geno) <- 1:ncol(hybrid_geno)
   
@@ -149,48 +150,75 @@ CreateHybridMarkers <- function(marker_data,ped_table) {
 }
 marker_data <- CreateHybridMarkers(marker_data,ped_table)
 
-# PART B - for each trait
+# PART B - for each trait -----
 
-# 4. Quality control
+# SCRATCH -----
+# trait_name <- TRAITS[1]
+# pred_names <- c("Location","Geno","LocRep","LocBlock")
+# library(glmulti)
+# 
+# model_select <- glmulti(y=trait_name,xr=pred_names,data=pheno_data)
+# model_select <- glmulti(y=trait_name,xr=pred_names,data=pheno_data,level=2,marginality=TRUE, method="d")
+
+
+# 4. Quality control -----
 #     Check for outliers
+
+
+
 #     Test for normality
 #     Test for equal variance
 
-# 5. Test for experient-wide GxE
+# 5. Test for experiment-wide GxE -----
 #     ANOVA
 #     Spearman rank correlation
 
-# 6. Test to see if means should be adjusted based on checks
+# 6. Test to see if means should be adjusted based on checks -----
 #     ANOVAs of checks
 
-# 7. ANOVAs
+# 7. ANOVAs ----
 #     Inbred ANOVAs
 #     Hybrid ANOVAs
  
-# 8. Collect phenotype values
+
+# From Suwarno, 2012: 
+
+# Y = μ + Env + Rep(Env) + Block(Rep x Env) + Set + GCA1(Set) + GCA2(Set) + 
+# SCA(Set) + Env x Set + Env x [GCA1(Set)] + Env x [GCA2(Set)] + Env x [SCA(Set)] + ε
+
+# Where μ = grand mean, Env = environment, Rep = replication, GCA1 and GCA2 = 
+# general combining ability of parent-1 and parent-2, respectively, SCA = specific
+# combining ability, and ε = experimental error. Set, GCA, and SCA were considered 
+# as fixed effects, whereas environment, replication, block, and all interactions 
+#involving these factors were random. To understand the effects of hybrid and hybrid
+# x environment interaction, the same model aggregating Set, GCA1(Set), GCA2(Set), 
+# SCA(Set) as “hybrid” and their interaction with the environment as “hybrid x 
+# environment” was fitted to the data.
+
+# 8. Collect phenotype values -----
 #     Inbred means
 #     Tested hybrid means
 #     Inbred GCAs
 #     Tested hybrid SCAs
 
-# 9. Predict untested hybrid means
+# 9. Predict untested hybrid means -----
 #     Classical (u + GCAf + GCAm)
 #     GBLUP
 #     Cross validiate GBLUP
 #     Classical vs. GBLUP comparison
 
-# 10. Predict synthetics
+# 10. Predict synthetics -----
 #     Classical (two step)
 #     GBLUP (two step)
 #     GLBUP (one step)
 
-# PART C - for all traits
+# PART C - for all traits -----
 
-# 11. Merge trait data
+# 11. Merge trait data -----
 
-# 12. Filter and sort hybrids and synthetics based on index
+# 12. Filter and sort hybrids and synthetics based on index -----
 
-# 13. Create tables and charts
+# 13. Create tables and charts -----
 #      QC info - QQplots, boxplots, etc
 #      ANOVA tables
 #      Spearkman correlations
