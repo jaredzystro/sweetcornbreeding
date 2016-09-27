@@ -2,7 +2,7 @@
 ### Workflow for data analysis and prediction of 
 ### Jared Zystro's se sweet corn breeding project
 
-# Style guide:
+# Style guide -----
 # ALLCAPS - global variables
 # UpperCamel - functions
 # lower_underscore - variables
@@ -26,6 +26,13 @@ InitializeProject <- function() {
   TRAITS <<- c("PlantHt","EarHt","Flavor","Tenderness","Husk","Tip","Width","Length","Pollen")
   
   setwd(WORKING_DIRECTORY)
+  
+  library(lme4)
+  library(lmerTest)
+  library(reshape)
+  library(Hmisc)
+  library(estimability)
+  
   
 }
 InitializeProject()
@@ -52,19 +59,60 @@ marker_data <- LoadMarkerData()
 AddPhenoDataFactors <- function (pheno_data) {
   
 pheno_data$Geno <- factor(pheno_data$Geno)
-pheno_data$LocBlock <- paste0(pheno_data$Location, pheno_data$Block)
 pheno_data$Block <- factor(pheno_data$Block)
-pheno_data$LocRep <- paste0(pheno_data$Location, pheno_data$Rep)
 pheno_data$LocRep <- factor(pheno_data$LocRep)
 pheno_data$Set <- factor(pheno_data$DIISet)
 pheno_data$MaleGeno <- factor(pheno_data$MaleGeno)
 pheno_data$FemaleGeno <- factor(pheno_data$FemaleGeno)
 pheno_data$Geno <- factor(pheno_data$Geno)
+pheno_data$Rep <- factor(pheno_data$Rep)
+pheno_data$Row <- factor(pheno_data$Row)
+pheno_data$Col <- factor(pheno_data$Col)
+pheno_data$Year <- factor(pheno_data$Year)
+
+pheno_data$Env <- with (pheno_data,Location:Year)
+pheno_data$EnvRep <- with(pheno_data,Rep:Env)
+pheno_data$EnvBlock <-with(pheno_data,Block:Env)
 
 return (pheno_data)
 
 }
 pheno_data <- AddPhenoDataFactors(pheno_data)
+
+#     Create phenotypic data subsets
+CreateDIISubset <- function (pheno_data) {
+  
+  return (droplevels(subset(pheno_data, Entry>40 & Entry<140)))
+
+}
+hybrid_pheno <- CreateDIISubset(pheno_data)
+
+CreateInbredSubset <- function (pheno_data) {
+  
+  return (droplevels((subset(pheno_data, Entry<=40))))
+  
+}
+inbred_pheno <- CreateInbredSubset(pheno_data)
+
+CreateCheckSubset <- function (pheno_data) {
+  
+  return (droplevels((subset(pheno_data, Entry>140))))
+  
+}
+check_pheno <- CreateCheckSubset(pheno_data)
+
+CreateSets <- function (hybrid_pheno) {
+  
+  dii_sets <- list()
+  
+  for (i in 1:4) {
+    dii_sets[[i]] <- subset(hybrid_pheno, Set==i)
+    dii_sets[[i]] <- droplevels(dii_sets[[i]])
+  }
+  
+  return (dii_sets)  
+}
+dii_sets <- CreateSets(hybrid_pheno)
 
 #     Format raw marker data
 FormatMarkerData <- function (marker_data) {
@@ -152,8 +200,14 @@ marker_data <- CreateHybridMarkers(marker_data,ped_table)
 
 # PART B - for each trait -----
 
-# SCRATCH -----
-# trait_name <- TRAITS[1]
+SetTraitName <- function (trait_number) {
+
+  return (TRAITS[trait_number])
+  
+}
+trait_name <- SetTraitName(1) ### TO BE LOOPED?
+
+#SCRATCH ------
 # pred_names <- c("Location","Geno","LocRep","LocBlock")
 # library(glmulti)
 # 
@@ -161,27 +215,13 @@ marker_data <- CreateHybridMarkers(marker_data,ped_table)
 # model_select <- glmulti(y=trait_name,xr=pred_names,data=pheno_data,level=2,marginality=TRUE, method="d")
 
 
-# 4. Quality control -----
+# 4. Quality control ----- TO DO
 #     Check for outliers
-
-
-
 #     Test for normality
 #     Test for equal variance
 
-# 5. Test for experiment-wide GxE -----
-#     ANOVA
-#     Spearman rank correlation
-
-# 6. Test to see if means should be adjusted based on checks -----
-#     ANOVAs of checks
-
-# 7. ANOVAs ----
-#     Inbred ANOVAs
-#     Hybrid ANOVAs
- 
-
-# From Suwarno, 2012: 
+# ANOVA Lit ----
+# From Suwarno, 2012 (Disseration): 
 
 # Y = μ + Env + Rep(Env) + Block(Rep x Env) + Set + GCA1(Set) + GCA2(Set) + 
 # SCA(Set) + Env x Set + Env x [GCA1(Set)] + Env x [GCA2(Set)] + Env x [SCA(Set)] + ε
@@ -190,35 +230,114 @@ marker_data <- CreateHybridMarkers(marker_data,ped_table)
 # general combining ability of parent-1 and parent-2, respectively, SCA = specific
 # combining ability, and ε = experimental error. Set, GCA, and SCA were considered 
 # as fixed effects, whereas environment, replication, block, and all interactions 
-#involving these factors were random. To understand the effects of hybrid and hybrid
+# involving these factors were random. To understand the effects of hybrid and hybrid
 # x environment interaction, the same model aggregating Set, GCA1(Set), GCA2(Set), 
 # SCA(Set) as “hybrid” and their interaction with the environment as “hybrid x 
 # environment” was fitted to the data.
 
-# 8. Collect phenotype values -----
+# From lmer for SAS PROC MIXED Users:
+# Multilocation$Grp <- with(Multilocation, Block:Location)
+# (fm1Mult <- lmer(Adj ˜ Location * Trt + (1|Grp), Multilocation))
+
+# 5. Test for experiment-wide GxE -----
+#     ANOVA
+CreateGxEModel<- function (trait_name, pheno_data) {
+
+  formula_name <- as.formula(paste0(trait_name, " ~ Geno * Env + (1|EnvRep) + (1|EnvBlock)"))
+  return (lmer(formula_name, data = pheno_data))  ### REQUIRES lme4
+  
+}
+gxe_model <- list()
+gxe_model[[trait_name]] <- CreateGxEModel(trait_name, pheno_data)
+gxe_anova <- list()
+gxe_anova[[trait_name]] <- anova(gxe_model[[trait_name]]) ### REQUIRES lmerTest
+
+#     Spearman rank correlation
+GxESpearman <- function (trait_name, pheno_data) {
+  
+  trait_loc <- aggregate(as.formula(paste0(trait_name," ~ Geno:Env")), data = pheno_data, mean, na.rm = TRUE)
+  trait_loc <- cast(trait_loc, Geno ~ Env, value = c(as.character(trait_name))) ### REQUIRES reshape
+  
+  return (rcorr(as.matrix(trait_loc), type = "spearman")) ### REQUIRES Hmisc
+  
+}
+spear_corr <- list ()
+spear_corr[[trait_name]] <- GxESpearman(trait_name, pheno_data)
+
+# 6. ANOVAs ----
+#     Check ANOVAs
+CreateCheckModel<- function (trait_name, check_pheno) {
+  
+  formula_name <- as.formula(paste0(trait_name, " ~ EnvBlock + (1|Geno)"))
+  return (lmer(formula_name, data = check_pheno))
+  
+}
+check_model <- list()
+check_model[[trait_name]] <- CreateCheckModel(trait_name, check_pheno)
+check_anova <- list()
+check_anova[[trait_name]] <- anova(check_model[[trait_name]])
+
+#     Adjust means based on checks? TO DO
+
+#     Inbred ANOVAs
+CreateInbredModel<- function (trait_name, inbred_pheno) {
+  
+  formula_name <- as.formula(paste0(trait_name, " ~ Geno * Env + (1 | EnvRep)"))
+  return (lmer(formula_name, data = inbred_pheno))
+  
+}
+inbred_model <- list()
+inbred_model[[trait_name]] <- CreateInbredModel(trait_name, inbred_pheno)
+inbred_anova <- list()
+inbred_anova[[trait_name]] <- anova(inbred_model[[trait_name]])
+
+#     Hybrid ANOVAs
+CreateHybridModel<- function (trait_name, hybrid_pheno) {
+  
+  # Y = μ + Env + Rep(Env) + Block(Rep x Env) + Set + GCA1(Set) + GCA2(Set) + 
+  # SCA(Set) + Env x Set + Env x [GCA1(Set)] + Env x [GCA2(Set)] + Env x [SCA(Set)] + ε
+  
+  
+  formula_name <- as.formula(paste0(trait_name, " ~ (1 | Env) * (Set + MaleGeno * FemaleGeno) + (1 | EnvRep)"))
+  return (lmer(formula_name, data = hybrid_pheno))
+  
+}
+hybrid_model <- list()
+hybrid_model[[trait_name]] <- CreateHybridModel(trait_name, hybrid_pheno)
+hybrid_anova <- list()
+hybrid_anova[[trait_name]] <- anova(hybrid_model[[trait_name]])
+
+# 7. Collect phenotype values -----
 #     Inbred means
+
+### Cannot seem to extract estimates from full model, splitting into parts
+
+
+plhtS2.lm <- lmer (Flavor ~ MaleGeno*FemaleGeno + (1|LocRep), data=Set2) ### REQUIRES estimability
+
+
 #     Tested hybrid means
 #     Inbred GCAs
 #     Tested hybrid SCAs
 
-# 9. Predict untested hybrid means -----
+# 8. Predict untested hybrid means -----
 #     Classical (u + GCAf + GCAm)
 #     GBLUP
 #     Cross validiate GBLUP
 #     Classical vs. GBLUP comparison
 
-# 10. Predict synthetics -----
+# 9. Predict synthetics -----
 #     Classical (two step)
 #     GBLUP (two step)
 #     GLBUP (one step)
 
 # PART C - for all traits -----
 
-# 11. Merge trait data -----
+# 10. Merge trait data -----
 
-# 12. Filter and sort hybrids and synthetics based on index -----
+# 11 . Filter and sort hybrids and synthetics based on index -----
 
-# 13. Create tables and charts -----
+# 12. Create tables and charts -----
 #      QC info - QQplots, boxplots, etc
 #      ANOVA tables
 #      Spearkman correlations
