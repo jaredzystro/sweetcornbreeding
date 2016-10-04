@@ -315,13 +315,30 @@ hybrid_anova[[trait_name]] <- anova(hybrid_model[[trait_name]])
 # 7. Collect phenotype values -----
 #     Inbred means
 
-### Cannot seem to extract estimates from full model, splitting into parts
+# NOTE: Inflated error b/c Env was dropped to address missing values
+GetInbredMeans <- function (trait_name, inbred_pheno) {
+  
+  formula_name <- as.formula(paste0(trait_name, " ~ Geno + (1 | EnvRep)"))
+  inbred_perse_model <- lmer(formula_name, data = inbred_pheno)
+  inbred_lsmeans <- (lsmeans(inbred_perse_model, "Geno"))$lsmeans.table
+  inbred_means <- data.frame (Genotype = inbred_lsmeans$Geno, 
+                              Estimate = inbred_lsmeans$Estimate, 
+                              StdErr = inbred_lsmeans$`Standard Error`)
+  return (inbred_means)
+  
+}
+inbred_means <- list()
+inbred_means[[trait_name]] <- GetInbredMeans(trait_name, inbred_pheno)
 
+#     Tested hybrid means
+#     Inbred GCAs
+
+### Cannot seem to extract estimates from full model, splitting into parts
 CreateSetModels <- function (trait_name, dii_sets) { ### DEBUG
   
   dii_model <- list()
   formula_name <- as.formula(paste0(trait_name, " ~ MaleGeno * FemaleGeno + (1 | EnvRep)"))
-
+  
 #  for (i in 1:3) { ### DEBUG
 #    i <- 1 ### DEBUG
 #    j <- as.numeric(i) ### DEBUG
@@ -330,6 +347,8 @@ CreateSetModels <- function (trait_name, dii_sets) { ### DEBUG
 #    data_set_name <- get(paste0(as.character(paste0("dii_sets[", j, "]"))))
 #    dii_model[[j]] <- lmer (formula_name, data = ) 
 #  }
+  
+# Problem with with assigning list members using "i" in loop, dropped the loop
   dii_model[[1]] <- lmer (formula_name, data = dii_sets[[1]]) 
   dii_model[[2]] <- lmer (formula_name, data = dii_sets[[2]]) 
   dii_model[[3]] <- lmer (formula_name, data = dii_sets[[3]]) 
@@ -338,9 +357,8 @@ CreateSetModels <- function (trait_name, dii_sets) { ### DEBUG
   return (dii_model) #DEBUG
   
 } ### DEBUG
-
 # debugonce(CreateSetModels) ### DEBUG
-dii_model <- CreateSetModels(trait_name, dii_sets) ### DEBUG
+dii_model[[trait_name]] <- CreateSetModels(trait_name, dii_sets) ### DEBUG
 
 GetGCAs <- function (trait_name, dii_model) {
   
@@ -349,15 +367,18 @@ GetGCAs <- function (trait_name, dii_model) {
   for (i in 1:4) {
     
  #   i <- 1 ### DEBUG
-    
-    sca_lsmeans <- (lsmeans(dii_model[[i]], "MaleGeno:FemaleGeno"))$lsmeans.table ### REQUIRES estimability
+    sca_lsmeans <- (lsmeans(dii_model[[trait_name]][[i]], "MaleGeno:FemaleGeno"))$lsmeans.table ### REQUIRES estimability
     grandmean <- mean(sca_lsmeans$Estimate)
     
-    fgca_lsmeans <- (lsmeans(dii_model[[i]], "FemaleGeno"))$lsmeans.table
-    fgca <- data.frame (Genotype=fgca_lsmeans$FemaleGeno, GCA = fgca_lsmeans$Estimate - grandmean, StdErr = fgca_lsmeans$`Standard Error`)
+    fgca_lsmeans <- (lsmeans(dii_model[[trait_name]][[i]], "FemaleGeno"))$lsmeans.table
+    fgca <- data.frame (Genotype = fgca_lsmeans$FemaleGeno, 
+                        GCA = fgca_lsmeans$Estimate - grandmean, 
+                        StdErr = fgca_lsmeans$`Standard Error`)
     
-    mgca_lsmeans <- (lsmeans(dii_model[[i]],"MaleGeno"))$lsmeans.table
-    mgca <- data.frame (Genotype = mgca_lsmeans$MaleGeno, GCA = mgca_lsmeans$Estimate - grandmean, StdErr = mgca_lsmeans$`Standard Error`)
+    mgca_lsmeans <- (lsmeans(dii_model[[trait_name]][[i]],"MaleGeno"))$lsmeans.table
+    mgca <- data.frame (Genotype = mgca_lsmeans$MaleGeno, 
+                        GCA = mgca_lsmeans$Estimate - grandmean, 
+                        StdErr = mgca_lsmeans$`Standard Error`)
     
     gca[[i]] <- merge(fgca, mgca, all=TRUE)
   }
@@ -366,12 +387,9 @@ GetGCAs <- function (trait_name, dii_model) {
   
 }
 
-gcas <- GetGCAs(trait_name, dii_model)
+gcas[[trait_name]] <- GetGCAs(trait_name, dii_model)
 
-#     Tested hybrid means
-#     Inbred GCAs
 #     Tested hybrid SCAs
-
 GetSCAs <- function (trait_name, dii_model) {
   
   sca <- list()
@@ -389,21 +407,65 @@ GetSCAs <- function (trait_name, dii_model) {
       sca_lsmeans[j, "Genotype"] <- paste0(sca_lsmeans[j, "FemaleGeno"], "x", sca_lsmeans[j, "MaleGeno"])
     }
     
-    sca[[i]] <- data.frame (Genotype=sca_lsmeans$Genotype, Estimate=sca_lsmeans$Estimate, SCA=sca_lsmeans$SCA, StdErr=sca_lsmeans$`Standard Error`)
+    sca[[i]] <- data.frame (Genotype = sca_lsmeans$Genotype, 
+                            Estimate = sca_lsmeans$Estimate, 
+                            SCA = sca_lsmeans$SCA, 
+                            StdErr = sca_lsmeans$`Standard Error`)
   }
   
   scas<-do.call(rbind,sca)
   
   return(scas)
 }
-
 # debugonce(GetSCAs) ### DEBUG
-scas <- GetSCAs(trait_name, dii_model)
+scas[[trait_name]] <- GetSCAs(trait_name, dii_model)
 
 # 8. Predict untested hybrid means -----
 #     Classical (u + GCAf + GCAm)
+##TODO
+PredictMeansClassic <- function (ped_table, scas, gcas, inbred_means) {
 
+  hybridmean <- mean(scas$Estimate)
+  hybrids <- data.frame(matrix(NA, nrow = nrow(ped_table), ncol = 2))
+  
+  for (i in 1:nrow(hybrids)){
+    
+    ID <- paste0(ped_table$indiv[i])
+    P1 <- paste0(ped_table$par1[i])
+    P2 <- paste0(ped_table$par2[i])
+    
+    hybrids[i, 1] <- ID
+    
+    if (!grepl("x", ID)) {
+      if (length(inbred_means[inbred_means$Genotype == ID, "Estimate"]) == 0) {
+        hybrids[i, 2] <- NA
+      }
+      else {
+        hybrids[i, 2] <- inbred_means[inbred_means$Genotype == ID, "Estimate"]
+      }
+    }
+    else if (paste0(P1, "x", P2) %in% scas$Genotype) {
+      hybrids[i, 2] <- scas[scas$Genotype == paste0(P1,"x",P2), "Estimate"]
+    }
+    else if (paste0(P2, "x", P1) %in% scas$Genotype) {
+      hybrids[i, 2] <- scas[scas$Genotype == paste0(P2,"x",P1), "Estimate"]
+    }
+    else {
+      p1_value <- gcas[gcas$Genotype == P1, "GCA"]
+      p2_value <- gcas[gcas$Genotype == P2, "GCA"]
+      hybrids[i, 2] <- hybridmean + p1_value + p2_value
+    }
+    
+  }
 
+  colnames(hybrids) <- c("Genotype", "Estimate")
+  return (hybrids)
+  
+}
+
+hybrid_means_classic <- list()
+# debugonce(PredictMeansClassic) ### DEBUG
+hybrid_means_classic[[trait_name]] <- PredictMeansClassic(ped_table, scas[[trait_name]], gcas[[trait_name]], inbred_means[[trait_name]])
 
 #     GBLUP
 #     Cross validiate GBLUP
