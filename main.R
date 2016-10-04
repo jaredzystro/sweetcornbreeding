@@ -19,7 +19,8 @@ InitializeProject <- function() {
   rm(list = ls(envir = .GlobalEnv), envir = .GlobalEnv) 
   
   WORKING_DIRECTORY <<- "~/Dropbox/PhD/SweetCornBreeding"
-  PHENO_DATA_FILE <<- "./data/Data.csv"
+  PHENO_DATA_FILE <<- "~/Dropbox/PhD/2015 Trials/Data.csv"
+  # PHENO_DATA_FILE <<- "./data/Data.csv"
   MARKER_DATA_FILE <<- "./data/data_parimp_37genos_dropminorhets_dropNAs_thinto250KB.hmp.txt"
   FUNCTIONS_SUBDIRECTORY <<- "./functions"
   NUM_GENOTYPES <<- 38
@@ -60,7 +61,6 @@ AddPhenoDataFactors <- function (pheno_data) {
   
 pheno_data$Geno <- factor(pheno_data$Geno)
 pheno_data$Block <- factor(pheno_data$Block)
-pheno_data$LocRep <- factor(pheno_data$LocRep)
 pheno_data$Set <- factor(pheno_data$DIISet)
 pheno_data$MaleGeno <- factor(pheno_data$MaleGeno)
 pheno_data$FemaleGeno <- factor(pheno_data$FemaleGeno)
@@ -70,9 +70,15 @@ pheno_data$Row <- factor(pheno_data$Row)
 pheno_data$Col <- factor(pheno_data$Col)
 pheno_data$Year <- factor(pheno_data$Year)
 
-pheno_data$Env <- with (pheno_data,Location:Year)
-pheno_data$EnvRep <- with(pheno_data,Rep:Env)
-pheno_data$EnvBlock <-with(pheno_data,Block:Env)
+pheno_data$Env <- factor(paste0(pheno_data$Location,pheno_data$Year))
+pheno_data$EnvRep <- factor(paste0(pheno_data$Env,pheno_data$Rep))
+pheno_data$EnvBlock <- factor(paste0(pheno_data$Env,pheno_data$Block))
+
+
+# Trying another way to see if this has been messing up the model
+# pheno_data$Env <- with (pheno_data,Location:Year)
+# pheno_data$EnvRep <- with(pheno_data,Rep:Env)
+# pheno_data$EnvBlock <-with(pheno_data,Block:Env)
 
 return (pheno_data)
 
@@ -82,7 +88,7 @@ pheno_data <- AddPhenoDataFactors(pheno_data)
 #     Create phenotypic data subsets
 CreateDIISubset <- function (pheno_data) {
   
-  return (droplevels(subset(pheno_data, Entry>40 & Entry<140)))
+  return (droplevels(subset(pheno_data, Entry>40 & Entry<=140)))
 
 }
 hybrid_pheno <- CreateDIISubset(pheno_data)
@@ -106,8 +112,7 @@ CreateSets <- function (hybrid_pheno) {
   dii_sets <- list()
   
   for (i in 1:4) {
-    dii_sets[[i]] <- subset(hybrid_pheno, Set==i)
-    dii_sets[[i]] <- droplevels(dii_sets[[i]])
+    dii_sets[[i]] <- droplevels(subset(hybrid_pheno, Set==i))
   }
   
   return (dii_sets)  
@@ -298,7 +303,7 @@ CreateHybridModel<- function (trait_name, hybrid_pheno) {
   # SCA(Set) + Env x Set + Env x [GCA1(Set)] + Env x [GCA2(Set)] + Env x [SCA(Set)] + ε
   
   
-  formula_name <- as.formula(paste0(trait_name, " ~ (1 | Env) * (Set + MaleGeno * FemaleGeno) + (1 | EnvRep)"))
+  formula_name <- as.formula(paste0(trait_name, " ~ Set + MaleGeno * FemaleGeno + (1 | EnvRep)"))
   return (lmer(formula_name, data = hybrid_pheno))
   
 }
@@ -312,16 +317,94 @@ hybrid_anova[[trait_name]] <- anova(hybrid_model[[trait_name]])
 
 ### Cannot seem to extract estimates from full model, splitting into parts
 
+CreateSetModels <- function (trait_name, dii_sets) { ### DEBUG
+  
+  dii_model <- list()
+  formula_name <- as.formula(paste0(trait_name, " ~ MaleGeno * FemaleGeno + (1 | EnvRep)"))
 
-plhtS2.lm <- lmer (Flavor ~ MaleGeno*FemaleGeno + (1|LocRep), data=Set2) ### REQUIRES estimability
+#  for (i in 1:3) { ### DEBUG
+#    i <- 1 ### DEBUG
+#    j <- as.numeric(i) ### DEBUG
+#    print (j) ### DEBUG
+#    ls() ### DEBUG
+#    data_set_name <- get(paste0(as.character(paste0("dii_sets[", j, "]"))))
+#    dii_model[[j]] <- lmer (formula_name, data = ) 
+#  }
+  dii_model[[1]] <- lmer (formula_name, data = dii_sets[[1]]) 
+  dii_model[[2]] <- lmer (formula_name, data = dii_sets[[2]]) 
+  dii_model[[3]] <- lmer (formula_name, data = dii_sets[[3]]) 
+  dii_model[[4]] <- lmer (formula_name, data = dii_sets[[4]]) 
+  
+  return (dii_model) #DEBUG
+  
+} ### DEBUG
 
+# debugonce(CreateSetModels) ### DEBUG
+dii_model <- CreateSetModels(trait_name, dii_sets) ### DEBUG
+
+GetGCAs <- function (trait_name, dii_model) {
+  
+  gca <- list()
+  
+  for (i in 1:4) {
+    
+ #   i <- 1 ### DEBUG
+    
+    sca_lsmeans <- (lsmeans(dii_model[[i]], "MaleGeno:FemaleGeno"))$lsmeans.table ### REQUIRES estimability
+    grandmean <- mean(sca_lsmeans$Estimate)
+    
+    fgca_lsmeans <- (lsmeans(dii_model[[i]], "FemaleGeno"))$lsmeans.table
+    fgca <- data.frame (Genotype=fgca_lsmeans$FemaleGeno, GCA = fgca_lsmeans$Estimate - grandmean, StdErr = fgca_lsmeans$`Standard Error`)
+    
+    mgca_lsmeans <- (lsmeans(dii_model[[i]],"MaleGeno"))$lsmeans.table
+    mgca <- data.frame (Genotype = mgca_lsmeans$MaleGeno, GCA = mgca_lsmeans$Estimate - grandmean, StdErr = mgca_lsmeans$`Standard Error`)
+    
+    gca[[i]] <- merge(fgca, mgca, all=TRUE)
+  }
+  
+  return(do.call(rbind,gca))
+  
+}
+
+gcas <- GetGCAs(trait_name, dii_model)
 
 #     Tested hybrid means
 #     Inbred GCAs
 #     Tested hybrid SCAs
 
+GetSCAs <- function (trait_name, dii_model) {
+  
+  sca <- list()
+  
+  for (i in 1:4) {
+#    i <- 1 ### DEBUG
+    sca_lsmeans <- (lsmeans(dii_model[[i]], "MaleGeno:FemaleGeno"))$lsmeans.table
+    grandmean <- mean(sca_lsmeans$Estimate)
+    
+    for (j in 1:nrow(sca_lsmeans)) {
+#      j <- 1 ### DEBUG
+      msca <- gcas[gcas$Genotype == paste0(sca_lsmeans[j, "MaleGeno"]), "GCA"]
+      fsca <- gcas[gcas$Genotype == paste0(sca_lsmeans[j, "FemaleGeno"]), "GCA"]
+      sca_lsmeans[j, "SCA"] <- sca_lsmeans[j, "Estimate"] - grandmean - msca - fsca
+      sca_lsmeans[j, "Genotype"] <- paste0(sca_lsmeans[j, "FemaleGeno"], "x", sca_lsmeans[j, "MaleGeno"])
+    }
+    
+    sca[[i]] <- data.frame (Genotype=sca_lsmeans$Genotype, Estimate=sca_lsmeans$Estimate, SCA=sca_lsmeans$SCA, StdErr=sca_lsmeans$`Standard Error`)
+  }
+  
+  scas<-do.call(rbind,sca)
+  
+  return(scas)
+}
+
+# debugonce(GetSCAs) ### DEBUG
+scas <- GetSCAs(trait_name, dii_model)
+
 # 8. Predict untested hybrid means -----
 #     Classical (u + GCAf + GCAm)
+
+
+
 #     GBLUP
 #     Cross validiate GBLUP
 #     Classical vs. GBLUP comparison
