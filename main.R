@@ -1,9 +1,8 @@
-
-### Workflow for data analysis and prediction of 
-### Jared Zystro's se sweet corn breeding project
+### Workflow -----
+### for data analysis and prediction of Jared Zystro's se sweet corn breeding project
 
 # Style guide -----
-# ALLCAPS - global variables
+# ALLCAPS - global constants
 # UpperCamel - functions
 # lower_underscore - variables
 # Space between operators
@@ -28,12 +27,24 @@ InitializeProject <- function() {
   
   setwd(WORKING_DIRECTORY)
   
-  library(lme4)
-  library(lmerTest)
-  library(reshape)
-  library(Hmisc)
-  library(estimability)
-  
+  if (!require("lme4")) install.packages("lme4")
+  library (lme4)
+  if (!require("lmerTest")) install.packages("lmerTest")
+  library (lmerTest)
+  if (!require("reshape")) install.packages("reshape")
+  library (reshape)
+  if (!require("Hmisc")) install.packages("Hmisc")
+  library (Hmisc)
+  if (!require("estimability")) install.packages("estimability")
+  library (estimability)
+  if (!require("parallel")) install.packages("parallel")
+  library(parallel)
+  if (!require("doSNOW")) install.packages("doSNOW")
+  library(doSNOW)
+  if (!require("bigmemory")) install.packages("bigmemory")
+  library(bigmemory)
+  if (!require("tidyr")) install.packages("tidyr")
+  library(tidyr)
   
 }
 InitializeProject()
@@ -48,7 +59,7 @@ LoadPhenoData <- function() {
 pheno_data <- LoadPhenoData()
 
 #     Load in inbred marker data
-LoadMarkerData <- function() {
+LoadMarkerData <- function () {
   
   return (read.delim(MARKER_DATA_FILE))
   
@@ -180,7 +191,7 @@ CreatePedTable <- function (parent_names) {
 ped_table <- CreatePedTable(data.frame(rownames(marker_data)))
 
 # Create marker data for hybrids from inbred marker data
-CreateHybridMarkers <- function(marker_data,ped_table) {
+CreateHybridMarkers <- function (marker_data, ped_table) {
   
   inbred_geno <- marker_data
   hybrid_peds <- ped_table[-(1:NUM_GENOTYPES), ]
@@ -201,7 +212,7 @@ CreateHybridMarkers <- function(marker_data,ped_table) {
   return (all_geno)
 
 }
-marker_data <- CreateHybridMarkers(marker_data,ped_table)
+marker_data <- CreateHybridMarkers(marker_data, ped_table)
 
 # PART B - for each trait -----
 
@@ -211,14 +222,6 @@ SetTraitName <- function (trait_number) {
   
 }
 trait_name <- SetTraitName(1) ### TO BE LOOPED?
-
-#SCRATCH ------
-# pred_names <- c("Location","Geno","LocRep","LocBlock")
-# library(glmulti)
-# 
-# model_select <- glmulti(y=trait_name,xr=pred_names,data=pheno_data)
-# model_select <- glmulti(y=trait_name,xr=pred_names,data=pheno_data,level=2,marginality=TRUE, method="d")
-
 
 # 4. Quality control ----- TO DO
 #     Check for outliers
@@ -425,47 +428,50 @@ scas[[trait_name]] <- GetSCAs(trait_name, dii_model)
 ##TODO
 PredictMeansClassic <- function (ped_table, scas, gcas, inbred_means) {
 
-  hybridmean <- mean(scas$Estimate)
-  hybrids <- data.frame(matrix(NA, nrow = nrow(ped_table), ncol = 2))
+  hybrid_mean <- mean(scas$Estimate)
+  all_means <- data.frame(matrix(NA, nrow = nrow(ped_table), ncol = 2))
   
-  for (i in 1:nrow(hybrids)){
+  for (i in 1:nrow(all_means)){
     
     ID <- paste0(ped_table$indiv[i])
     P1 <- paste0(ped_table$par1[i])
     P2 <- paste0(ped_table$par2[i])
     
-    hybrids[i, 1] <- ID
+    all_means[i, 1] <- ID
     
     if (!grepl("x", ID)) {
       if (length(inbred_means[inbred_means$Genotype == ID, "Estimate"]) == 0) {
-        hybrids[i, 2] <- NA
+        all_means[i, 2] <- NA
       }
       else {
-        hybrids[i, 2] <- inbred_means[inbred_means$Genotype == ID, "Estimate"]
+        all_means[i, 2] <- inbred_means[inbred_means$Genotype == ID, "Estimate"]
       }
     }
     else if (paste0(P1, "x", P2) %in% scas$Genotype) {
-      hybrids[i, 2] <- scas[scas$Genotype == paste0(P1,"x",P2), "Estimate"]
+      all_means[i, 2] <- scas[scas$Genotype == paste0(P1,"x",P2), "Estimate"]
     }
     else if (paste0(P2, "x", P1) %in% scas$Genotype) {
-      hybrids[i, 2] <- scas[scas$Genotype == paste0(P2,"x",P1), "Estimate"]
+      all_means[i, 2] <- scas[scas$Genotype == paste0(P2,"x",P1), "Estimate"]
     }
     else {
       p1_value <- gcas[gcas$Genotype == P1, "GCA"]
       p2_value <- gcas[gcas$Genotype == P2, "GCA"]
-      hybrids[i, 2] <- hybridmean + p1_value + p2_value
+      all_means[i, 2] <- hybrid_mean + p1_value + p2_value
     }
     
   }
 
-  colnames(hybrids) <- c("Genotype", "Estimate")
-  return (hybrids)
+  colnames(all_means) <- c("Genotype", "Estimate")
+  return (all_means)
   
 }
 
-hybrid_means_classic <- list()
+all_means_classic <- list()
 # debugonce(PredictMeansClassic) ### DEBUG
-hybrid_means_classic[[trait_name]] <- PredictMeansClassic(ped_table, scas[[trait_name]], gcas[[trait_name]], inbred_means[[trait_name]])
+all_means_classic[[trait_name]] <- PredictMeansClassic(ped_table, 
+                                                          scas[[trait_name]], 
+                                                          gcas[[trait_name]], 
+                                                          inbred_means[[trait_name]])
 
 #     GBLUP
 #     Cross validiate GBLUP
@@ -473,6 +479,107 @@ hybrid_means_classic[[trait_name]] <- PredictMeansClassic(ped_table, scas[[trait
 
 # 9. Predict synthetics -----
 #     Classical (two step)
+
+ConvertMeansToWide <- function (all_means) {
+  
+#  all_means <- all_means_classic[[trait_name]] ### DEBUG
+  for (i in 1:NUM_GENOTYPES) {
+    
+    all_means[i,"Genotype"] <- paste0(all_means[i,"Genotype"], "x", all_means[i,"Genotype"])
+  
+  }
+  sep_means <- separate(data = all_means, col = Genotype, into = c("Female", "Male"), sep = "x") ### REQUIRES tidyr
+  sep_means2 <- separate(data = all_means, col = Genotype, into = c("Male", "Female"), sep = "x")
+  all_means <- do.call(rbind,list(sep_means,sep_means2))
+  wide_all <- reshape(data = all_means, idvar = "Female", timevar = "Male", direction = "wide", new.row.names = unique(all_means$Female))[,-1]
+  names(wide_all) <- gsub("Estimate.", "", names(wide_all))
+  
+  return (wide_all)
+}
+
+wide_means_classic <- list()
+wide_means_classic[[trait_name]] <- ConvertMeansToWide(all_means_classic[[trait_name]]) 
+
+Combinadic <- function(n, r, i) {
+  
+  # More effiecient combinations than combn
+  # http://msdn.microsoft.com/en-us/library/aa289166(VS.71).aspx
+  # http://en.wikipedia.org/wiki/Combinadic
+  
+  if(i < 1 | i > choose(n,r)) stop("'i' must be 0 < i <= n!/(n-r)!")
+  
+  largestV <- function(n, r, i) {
+    #v <- n-1
+    v <- n                                  # Adjusted for one-based indexing
+    #while(choose(v,r) > i) v <- v-1
+    while(choose(v,r) >= i) v <- v-1        # Adjusted for one-based indexing
+    return(v)
+  }
+  
+  res <- rep(NA,r)
+  for(j in 1:r) {
+    res[j] <- largestV(n,r,i)
+    i <- i-choose(res[j],r)
+    n <- res[j]
+    r <- r-1
+  }
+  res <- res + 1
+  return(res)
+}
+
+SubsetWright <- function (perse.hybrid, subset) {
+  return (mean(perse.hybrid[subset,subset]))
+}
+
+TestSyn <- function (perse.hybrid, min, max, rows="all", type="p", cl) {
+  
+  if (min<2) stop ("min must be at least 2")
+  if (nrow(perse.hybrid)<2) stop("At least two inbreds must be included in perse.hybrid matrix")
+  if (nrow(perse.hybrid) != ncol(perse.hybrid)) stop("perse.hybrid matrix must be square")
+  if (max>nrow(perse.hybrid)) stop("max cannot be greater than the size of the matrix")
+  
+  cl <- makeCluster(detectCores()-1) ### REQUIRES parallel
+  clusterExport(cl, list("SubsetWright", "Combinadic"))
+  
+  total <- sum(apply(X=array(min:max),MARGIN=1,FUN=choose,n=nrow(perse.hybrid)))
+  n <- nrow(perse.hybrid)
+  start <- 1
+  stop <- choose(n,min)
+  
+  syn.data <- big.matrix(nrow=total,ncol=max+1) ### REQUIRES big.matrix
+  
+  print.noquote (paste("Testing ",total," combinations",sep = ""))
+  
+  for (i in min:max)
+  {
+    
+    #add inbred numbers to syn.data
+    inbreds <- t(parSapplyLB(cl=cl,X=1:((stop-start)+1), FUN=Combinadic, n=n, r=i))
+    syn.data[start:stop,1:i] <- inbreds
+    
+    #add sythetic values to syn.data
+    syn.data[start:stop,max+1]  <- parApply(cl=cl,X=inbreds,MARGIN=1,FUN=SubsetWright,perse.hybrid=perse.hybrid)
+    
+    start <- stop + 1
+    stop <- start + choose(n,i+1) - 1
+    
+  }
+  
+  stopCluster(cl)
+  
+  #remove NAs
+  syn.data<-syn.data[!is.na(syn.data[,ncol(syn.data)]),]
+  
+  mpermute(x=syn.data,cols=max+1,decreasing=TRUE)
+  
+  if (rows == "all") rows <- nrow(syn.data)
+  
+  return (syn.data[c(1:rows,(nrow(syn.data)-rows):nrow(syn.data)),])
+}
+
+syns <- list()
+syns[[trait_name]] <- TestSyn(perse.hybrid=data.matrix(wide_means_classic[[trait_name]]),min=2,max=4,rows=10,cl=cl)
+
 #     GBLUP (two step)
 #     GLBUP (one step)
 
@@ -494,7 +601,33 @@ hybrid_means_classic[[trait_name]] <- PredictMeansClassic(ped_table, scas[[trait
 #      GBLUP cross-validation 
 #      Predicted synthetic means (filtered)
 
+printSyns <- function (syns,hybrids) {
+  
+  cat(paste0("Top ",(nrow(syns)-1)/2," and bottom ",(nrow(syns)-1)/2," predicted synthetics\n\n"))
+  for (i in 1:nrow(syns)) {
+    
+    syn_row<-syns[i,1:ncol(syns)-1]
+    syn_row<-syn_row[!is.na(syn_row)]
+    print(hybrids[syn_row,syn_row])
+    cat(paste0("Mean: ",round(mean(data.matrix(hybrids[syn_row,syn_row])),4),"\n"))
+    cat(paste0("Std Dev: ",round(sd(data.matrix(hybrids[syn_row,syn_row])),4),"\n\n"))
+    
+  }
+  
+}
+printSyns(syns[[trait_name]], wide_means_classic[[trait_name]])
 
+
+# Saving and retriving environment -----
+# save.image(file = "sweetcornobjects.rda")
+# load("sweetcornobjects.rda")
+
+# SCRATCH ------
+# pred_names <- c("Location","Geno","LocRep","LocBlock")
+# library(glmulti)
+# 
+# model_select <- glmulti(y=trait_name,xr=pred_names,data=pheno_data)
+# model_select <- glmulti(y=trait_name,xr=pred_names,data=pheno_data,level=2,marginality=TRUE, method="d")
 
 
 
