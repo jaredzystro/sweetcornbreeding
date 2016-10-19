@@ -17,9 +17,9 @@ InitializeProject <- function() {
   
   rm(list = ls(envir = .GlobalEnv), envir = .GlobalEnv) 
   
-  WORKING_DIRECTORY <<- "~/Dropbox/PhD/SweetCornBreeding"
-  PHENO_DATA_FILE <<- "~/Dropbox/PhD/2015 Trials/Data.csv"
-  # PHENO_DATA_FILE <<- "./data/Data.csv"
+  WORKING_DIRECTORY <<- "/home/sweetcorn/sweetcornbreeding"
+  # PHENO_DATA_FILE <<- "~/Dropbox/PhD/2015 Trials/Data.csv"
+  PHENO_DATA_FILE <<- "./data/Data.csv"
   MARKER_DATA_FILE <<- "./data/data_parimp_37genos_dropminorhets_dropNAs_thinto250KB.hmp.txt"
   FUNCTIONS_SUBDIRECTORY <<- "./functions"
   NUM_GENOTYPES <<- 38
@@ -237,7 +237,12 @@ SetTraitName <- function (trait_number) {
   return (TRAITS[trait_number])
   
 }
-trait_name <- SetTraitName(2) ### TO BE LOOPED?
+
+for (trait_num in 1:length(TRAITS)) {
+
+# trait_num <- 1
+
+trait_name <- SetTraitName(trait_num) ### TO BE LOOPED?
 
 # 4. Quality control ----- TO DO
 #     Check for outliers
@@ -380,22 +385,22 @@ CreateSetModels <- function (trait_name, dii_sets) { ### DEBUG
 dii_model <- ProtectedList ("dii_model")
 dii_model[[trait_name]] <- CreateSetModels(trait_name, dii_sets) ### DEBUG
 
-GetGCAs <- function (trait_name, dii_model) {
+GetGCAs <- function (dii_model) {
   
   gca <- list()
   
   for (i in 1:4) {
     
  #   i <- 1 ### DEBUG
-    sca_lsmeans <- (lsmeans(dii_model[[trait_name]][[i]], "MaleGeno:FemaleGeno"))$lsmeans.table ### REQUIRES estimability
+    sca_lsmeans <- (lsmeans(dii_model[[i]], "MaleGeno:FemaleGeno"))$lsmeans.table ### REQUIRES estimability
     grandmean <- mean(sca_lsmeans$Estimate)
     
-    fgca_lsmeans <- (lsmeans(dii_model[[trait_name]][[i]], "FemaleGeno"))$lsmeans.table
+    fgca_lsmeans <- (lsmeans(dii_model[[i]], "FemaleGeno"))$lsmeans.table
     fgca <- data.frame (Genotype = fgca_lsmeans$FemaleGeno, 
                         GCA = fgca_lsmeans$Estimate - grandmean, 
                         StdErr = fgca_lsmeans$`Standard Error`)
     
-    mgca_lsmeans <- (lsmeans(dii_model[[trait_name]][[i]],"MaleGeno"))$lsmeans.table
+    mgca_lsmeans <- (lsmeans(dii_model[[i]],"MaleGeno"))$lsmeans.table
     mgca <- data.frame (Genotype = mgca_lsmeans$MaleGeno, 
                         GCA = mgca_lsmeans$Estimate - grandmean, 
                         StdErr = mgca_lsmeans$`Standard Error`)
@@ -407,10 +412,10 @@ GetGCAs <- function (trait_name, dii_model) {
   
 }
 gcas <- ProtectedList ("gcas") 
-gcas[[trait_name]] <- GetGCAs(trait_name, dii_model)
+gcas[[trait_name]] <- GetGCAs(unlist(dii_model[[trait_name]]))
 
 #     Tested hybrid SCAs
-GetSCAs <- function (trait_name, dii_model) {
+GetSCAs <- function (gcas, dii_model) {
   
   sca <- list()
   
@@ -439,7 +444,7 @@ GetSCAs <- function (trait_name, dii_model) {
 }
 # debugonce(GetSCAs) ### DEBUG
 scas <- ProtectedList("scas")
-scas[[trait_name]] <- GetSCAs(trait_name, dii_model)
+scas[[trait_name]] <- GetSCAs(gcas[[trait_name]],unlist(dii_model[[trait_name]]))
 
 # 8. Predict untested hybrid means -----
 #     Classical (u + GCAf + GCAm)
@@ -517,6 +522,9 @@ ConvertMeansToWide <- function (all_means) {
 
 wide_means_classic <- ProtectedList("wide_means_classic")
 wide_means_classic[[trait_name]] <- ConvertMeansToWide(all_means_classic[[trait_name]]) 
+
+# End Loop
+}
 
 Combinadic <- function (n, r, i) {
   
@@ -596,9 +604,20 @@ TestSyn <- function (perse_hybrid, min, max, rows = "all", type = "p", cl) {
   return (syn_data[c(1:rows, (nrow(syn_data) - rows):nrow(syn_data)), ])
 }
 
+for (trait_num in 1:length(TRAITS)) {
+  
+  # trait_num <- 1
+  
+  trait_name <- SetTraitName(trait_num) ### TO BE LOOPED?
+
 syns <- ProtectedList("syns")
 syns[[trait_name]] <- TestSyn(perse_hybrid = data.matrix(wide_means_classic[[trait_name]]),
-                              min = 2, max = 4, rows = "all", cl = cl)
+                              min = 2, max = 7, rows = "all", cl = cl)
+}
+
+debugonce(TestSyn)
+test <- TestSyn(perse_hybrid = data.matrix(wide_means_classic$PlantHt),
+        min = 2, max = 5, rows = "all", cl = cl)
 
 #     GBLUP (two step)
 #     GLBUP (one step)
