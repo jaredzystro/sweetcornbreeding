@@ -216,12 +216,28 @@ marker_data <- CreateHybridMarkers(marker_data, ped_table)
 
 # PART B - for each trait -----
 
+ProtectedList <- function (list_name) {
+  
+  if (!exists(list_name)) {
+    
+    return_list <- list()
+    
+  } else {
+    
+    return_list <- get(list_name)
+    
+  }
+  
+  return (return_list)
+  
+}
+
 SetTraitName <- function (trait_number) {
 
   return (TRAITS[trait_number])
   
 }
-trait_name <- SetTraitName(1) ### TO BE LOOPED?
+trait_name <- SetTraitName(2) ### TO BE LOOPED?
 
 # 4. Quality control ----- TO DO
 #     Check for outliers
@@ -255,9 +271,9 @@ CreateGxEModel<- function (trait_name, pheno_data) {
   return (lmer(formula_name, data = pheno_data))  ### REQUIRES lme4
   
 }
-gxe_model <- list()
+gxe_model <- ProtectedList("gxe_model")
 gxe_model[[trait_name]] <- CreateGxEModel(trait_name, pheno_data)
-gxe_anova <- list()
+gxe_anova <- ProtectedList("gxe_anova")
 gxe_anova[[trait_name]] <- anova(gxe_model[[trait_name]]) ### REQUIRES lmerTest
 
 #     Spearman rank correlation
@@ -269,7 +285,7 @@ GxESpearman <- function (trait_name, pheno_data) {
   return (rcorr(as.matrix(trait_loc), type = "spearman")) ### REQUIRES Hmisc
   
 }
-spear_corr <- list ()
+spear_corr <- ProtectedList ("spear_corr")
 spear_corr[[trait_name]] <- GxESpearman(trait_name, pheno_data)
 
 # 6. ANOVAs ----
@@ -280,9 +296,9 @@ CreateCheckModel<- function (trait_name, check_pheno) {
   return (lmer(formula_name, data = check_pheno))
   
 }
-check_model <- list()
+check_model <- ProtectedList("check_model")
 check_model[[trait_name]] <- CreateCheckModel(trait_name, check_pheno)
-check_anova <- list()
+check_anova <- ProtectedList("check_anova")
 check_anova[[trait_name]] <- anova(check_model[[trait_name]])
 
 #     Adjust means based on checks? TO DO
@@ -294,9 +310,9 @@ CreateInbredModel<- function (trait_name, inbred_pheno) {
   return (lmer(formula_name, data = inbred_pheno))
   
 }
-inbred_model <- list()
+inbred_model <- ProtectedList("inbred_model")
 inbred_model[[trait_name]] <- CreateInbredModel(trait_name, inbred_pheno)
-inbred_anova <- list()
+inbred_anova <- ProtectedList("inbred_anova")
 inbred_anova[[trait_name]] <- anova(inbred_model[[trait_name]])
 
 #     Hybrid ANOVAs
@@ -310,9 +326,9 @@ CreateHybridModel<- function (trait_name, hybrid_pheno) {
   return (lmer(formula_name, data = hybrid_pheno))
   
 }
-hybrid_model <- list()
+hybrid_model <- ProtectedList("hybrid_model")
 hybrid_model[[trait_name]] <- CreateHybridModel(trait_name, hybrid_pheno)
-hybrid_anova <- list()
+hybrid_anova <- ProtectedList("hybrid_anova")
 hybrid_anova[[trait_name]] <- anova(hybrid_model[[trait_name]])
 
 # 7. Collect phenotype values -----
@@ -330,7 +346,7 @@ GetInbredMeans <- function (trait_name, inbred_pheno) {
   return (inbred_means)
   
 }
-inbred_means <- list()
+inbred_means <- ProtectedList("inbred_means")
 inbred_means[[trait_name]] <- GetInbredMeans(trait_name, inbred_pheno)
 
 #     Tested hybrid means
@@ -361,6 +377,7 @@ CreateSetModels <- function (trait_name, dii_sets) { ### DEBUG
   
 } ### DEBUG
 # debugonce(CreateSetModels) ### DEBUG
+dii_model <- ProtectedList ("dii_model")
 dii_model[[trait_name]] <- CreateSetModels(trait_name, dii_sets) ### DEBUG
 
 GetGCAs <- function (trait_name, dii_model) {
@@ -389,7 +406,7 @@ GetGCAs <- function (trait_name, dii_model) {
   return(do.call(rbind,gca))
   
 }
-
+gcas <- ProtectedList ("gcas") 
 gcas[[trait_name]] <- GetGCAs(trait_name, dii_model)
 
 #     Tested hybrid SCAs
@@ -421,6 +438,7 @@ GetSCAs <- function (trait_name, dii_model) {
   return(scas)
 }
 # debugonce(GetSCAs) ### DEBUG
+scas <- ProtectedList("scas")
 scas[[trait_name]] <- GetSCAs(trait_name, dii_model)
 
 # 8. Predict untested hybrid means -----
@@ -466,7 +484,7 @@ PredictMeansClassic <- function (ped_table, scas, gcas, inbred_means) {
   
 }
 
-all_means_classic <- list()
+all_means_classic <- ProtectedList("all_means_classic")
 # debugonce(PredictMeansClassic) ### DEBUG
 all_means_classic[[trait_name]] <- PredictMeansClassic(ped_table, 
                                                           scas[[trait_name]], 
@@ -497,88 +515,90 @@ ConvertMeansToWide <- function (all_means) {
   return (wide_all)
 }
 
-wide_means_classic <- list()
+wide_means_classic <- ProtectedList("wide_means_classic")
 wide_means_classic[[trait_name]] <- ConvertMeansToWide(all_means_classic[[trait_name]]) 
 
-Combinadic <- function(n, r, i) {
+Combinadic <- function (n, r, i) {
   
-  # More effiecient combinations than combn
+  # Allows slices of combinations in order to parallelize
   # http://msdn.microsoft.com/en-us/library/aa289166(VS.71).aspx
   # http://en.wikipedia.org/wiki/Combinadic
   
-  if(i < 1 | i > choose(n,r)) stop("'i' must be 0 < i <= n!/(n-r)!")
+  if (i < 1 | i > choose(n, r)) stop ("'i' must be 0 < i <= n!/(n-r)!")
   
-  largestV <- function(n, r, i) {
-    #v <- n-1
+  largestV <- function (n, r, i) {
+    #v <- n - 1
     v <- n                                  # Adjusted for one-based indexing
-    #while(choose(v,r) > i) v <- v-1
-    while(choose(v,r) >= i) v <- v-1        # Adjusted for one-based indexing
-    return(v)
+    #while (choose(v, r) > i) v <- v - 1
+    while (choose(v, r) >= i) v <- v - 1        # Adjusted for one-based indexing
+    return (v)
   }
   
-  res <- rep(NA,r)
-  for(j in 1:r) {
-    res[j] <- largestV(n,r,i)
-    i <- i-choose(res[j],r)
+  res <- rep(NA, r)
+  for (j in 1:r) {
+    res[j] <- largestV(n, r, i)
+    i <- i - choose(res[j], r)
     n <- res[j]
-    r <- r-1
+    r <- r - 1
   }
   res <- res + 1
   return(res)
 }
 
-SubsetWright <- function (perse.hybrid, subset) {
-  return (mean(perse.hybrid[subset,subset]))
+SubsetWright <- function (perse_hybrid, subset) {
+  return (mean(perse_hybrid[subset, subset]))
 }
 
-TestSyn <- function (perse.hybrid, min, max, rows="all", type="p", cl) {
+TestSyn <- function (perse_hybrid, min, max, rows = "all", type = "p", cl) {
   
-  if (min<2) stop ("min must be at least 2")
-  if (nrow(perse.hybrid)<2) stop("At least two inbreds must be included in perse.hybrid matrix")
-  if (nrow(perse.hybrid) != ncol(perse.hybrid)) stop("perse.hybrid matrix must be square")
-  if (max>nrow(perse.hybrid)) stop("max cannot be greater than the size of the matrix")
+  if (min < 2) stop ("min must be at least 2")
+  if (nrow(perse_hybrid) < 2) stop ("At least two inbreds must be included in perse_hybrid matrix")
+  if (nrow(perse_hybrid) != ncol(perse_hybrid)) stop ("perse_hybrid matrix must be square")
+  if (max > nrow(perse_hybrid)) stop ("max cannot be greater than the size of the matrix")
   
-  cl <- makeCluster(detectCores()-1) ### REQUIRES parallel
+  cl <- makeCluster(detectCores() - 1) ### REQUIRES parallel
   clusterExport(cl, list("SubsetWright", "Combinadic"))
   
-  total <- sum(apply(X=array(min:max),MARGIN=1,FUN=choose,n=nrow(perse.hybrid)))
-  n <- nrow(perse.hybrid)
+  total <- sum(apply(X = array(min:max), MARGIN = 1, FUN = choose, n = nrow(perse_hybrid)))
+  n <- nrow(perse_hybrid)
   start <- 1
-  stop <- choose(n,min)
+  stop <- choose(n, min)
   
-  syn.data <- big.matrix(nrow=total,ncol=max+1) ### REQUIRES big.matrix
+  syn_data <- big.matrix(nrow = total, ncol = max + 1) ### REQUIRES big.matrix
   
-  print.noquote (paste("Testing ",total," combinations",sep = ""))
+  print.noquote (paste("Testing ", total, " combinations", sep = ""))
   
   for (i in min:max)
   {
     
-    #add inbred numbers to syn.data
-    inbreds <- t(parSapplyLB(cl=cl,X=1:((stop-start)+1), FUN=Combinadic, n=n, r=i))
-    syn.data[start:stop,1:i] <- inbreds
+    #add inbred numbers to syn_data
+    inbreds <- t(parSapplyLB(cl = cl, X = 1 : ((stop - start) + 1), FUN = Combinadic, n = n, r = i))
+    syn_data[start:stop, 1:i] <- inbreds
     
-    #add sythetic values to syn.data
-    syn.data[start:stop,max+1]  <- parApply(cl=cl,X=inbreds,MARGIN=1,FUN=SubsetWright,perse.hybrid=perse.hybrid)
+    #add sythetic values to syn_data
+    syn_data[start:stop, max+1]  <- parApply(cl = cl, X = inbreds, MARGIN = 1,
+                                             FUN = SubsetWright, perse_hybrid = perse_hybrid)
     
     start <- stop + 1
-    stop <- start + choose(n,i+1) - 1
+    stop <- start + choose(n, i + 1) - 1
     
   }
   
   stopCluster(cl)
   
   #remove NAs
-  syn.data<-syn.data[!is.na(syn.data[,ncol(syn.data)]),]
+  syn_data <- syn_data[!is.na(syn_data[, ncol(syn_data)]), ]
   
-  mpermute(x=syn.data,cols=max+1,decreasing=TRUE)
+  mpermute(x = syn_data, cols = max + 1, decreasing = TRUE)
   
-  if (rows == "all") rows <- nrow(syn.data)
+  if (rows == "all") rows <- nrow(syn_data)
   
-  return (syn.data[c(1:rows,(nrow(syn.data)-rows):nrow(syn.data)),])
+  return (syn_data[c(1:rows, (nrow(syn_data) - rows):nrow(syn_data)), ])
 }
 
-syns <- list()
-syns[[trait_name]] <- TestSyn(perse.hybrid=data.matrix(wide_means_classic[[trait_name]]),min=2,max=4,rows=10,cl=cl)
+syns <- ProtectedList("syns")
+syns[[trait_name]] <- TestSyn(perse_hybrid = data.matrix(wide_means_classic[[trait_name]]),
+                              min = 2, max = 4, rows = "all", cl = cl)
 
 #     GBLUP (two step)
 #     GLBUP (one step)
@@ -601,16 +621,16 @@ syns[[trait_name]] <- TestSyn(perse.hybrid=data.matrix(wide_means_classic[[trait
 #      GBLUP cross-validation 
 #      Predicted synthetic means (filtered)
 
-printSyns <- function (syns,hybrids) {
+printSyns <- function (syns, hybrids) {
   
-  cat(paste0("Top ",(nrow(syns)-1)/2," and bottom ",(nrow(syns)-1)/2," predicted synthetics\n\n"))
+  cat(paste0("Top ", (nrow(syns) - 1) / 2," and bottom ",(nrow(syns) - 1) / 2," predicted synthetics\n\n"))
   for (i in 1:nrow(syns)) {
     
-    syn_row<-syns[i,1:ncol(syns)-1]
-    syn_row<-syn_row[!is.na(syn_row)]
-    print(hybrids[syn_row,syn_row])
-    cat(paste0("Mean: ",round(mean(data.matrix(hybrids[syn_row,syn_row])),4),"\n"))
-    cat(paste0("Std Dev: ",round(sd(data.matrix(hybrids[syn_row,syn_row])),4),"\n\n"))
+    syn_row <- syns[i, 1:ncol(syns) - 1]
+    syn_row <- syn_row[!is.na(syn_row)]
+    print(hybrids[syn_row, syn_row])
+    cat(paste0("Mean: ", round(mean(data.matrix(hybrids[syn_row, syn_row])), 4), "\n"))
+    cat(paste0("Std Dev: ", round(sd(data.matrix(hybrids[syn_row, syn_row])), 4), "\n\n"))
     
   }
   
